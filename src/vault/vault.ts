@@ -1,4 +1,5 @@
 import type { EncryptedBlob } from "./types";
+import { getOrCreatePasswordHash } from "../store/db";
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
@@ -58,12 +59,28 @@ export async function deriveMasterKey(password: string, salt: Uint8Array): Promi
   );
 }
 
+export async function hashPassword(password: string): Promise<string> {
+  const hashBuffer = await crypto.subtle.digest("SHA-256", textEncoder.encode(password));
+  
+  // Convert to base64 for storage consistency
+  let s = "";
+  new Uint8Array(hashBuffer).forEach((b) => (s += String.fromCharCode(b)));
+  return btoa(s);
+}
+
 export async function unlockVault(password: string, salt: Uint8Array) {
   // No logging. Never store password.
+  
+  // Ensure password hash is initialized (will create 'MapleLeafs' hash if needed)
+  const storedHash = await getOrCreatePasswordHash(hashPassword);
+  
+  // Verify password hash
+  const enteredHash = await hashPassword(password);
+  if (enteredHash !== storedHash) {
+    throw new Error("Invalid password");
+  }
+  
   masterKey = await deriveMasterKey(password, salt);
-
-  // Quick verification step (optional, best practice):
-  // Later we’ll verify by decrypting a small "vaultCheck" blob.
 }
 
 export function lockVault() {

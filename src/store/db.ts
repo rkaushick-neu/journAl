@@ -16,11 +16,11 @@ export const dbPromise = openDB(DB_NAME, DB_VERSION, {
   },
 });
 
-export type SettingsRecord = { id: "vault-salt"; saltB64: string };
+export type SettingsRecord = { id: "vault-salt"; saltB64: string } | { id: "password-hash"; hashB64: string };
 
 export async function getOrCreateSalt(): Promise<Uint8Array> {
   const db = await dbPromise;
-  const existing = (await db.get("settings", "vault-salt")) as SettingsRecord | undefined;
+  const existing = (await db.get("settings", "vault-salt")) as { id: "vault-salt"; saltB64: string } | undefined;
 
   if (existing?.saltB64) {
     const bin = atob(existing.saltB64);
@@ -50,4 +50,28 @@ export async function listEntriesByDateDesc(): Promise<EncryptedEntryEnvelope[]>
   const db = await dbPromise;
   const all = (await db.getAll("entries")) as EncryptedEntryEnvelope[];
   return all.sort((a, b) => (a.date < b.date ? 1 : -1));
+}
+
+export async function getPasswordHash(): Promise<string | undefined> {
+  const db = await dbPromise;
+  const record = (await db.get("settings", "password-hash")) as { id: "password-hash"; hashB64: string } | undefined;
+  return record?.hashB64;
+}
+
+export async function setPasswordHash(hashB64: string): Promise<void> {
+  const db = await dbPromise;
+  await db.put("settings", { id: "password-hash", hashB64 } satisfies SettingsRecord);
+}
+
+export async function getOrCreatePasswordHash(computeHash: (password: string) => Promise<string>): Promise<string> {
+  const existing = await getPasswordHash();
+  if (existing) {
+    return existing;
+  }
+  
+  // Initialize with 'MapleLeafs' on first run
+  const defaultPassword = "MapleLeafs";
+  const hash = await computeHash(defaultPassword);
+  await setPasswordHash(hash);
+  return hash;
 }
